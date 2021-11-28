@@ -231,6 +231,7 @@ impl Term {
                 notebook.set_tab_label(child, Some(&self.page_label(page as u32, None)));
             }
         }
+        notebook.set_show_tabs(notebook.n_pages() > 1);
         if notebook.children().is_empty() {
             self.close();
         }
