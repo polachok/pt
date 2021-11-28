@@ -163,6 +163,14 @@ impl Term {
 
     fn add_events(&self) {
         let this = self.clone();
+        let notebook = self.notebook();
+
+        notebook.connect_switch_page(glib::clone!(@weak this => move |_nb, term, _page| {
+            if let Some(title) = term.downcast_ref::<vte::Terminal>().and_then(|term| term.window_title()) {
+                this.set_title(&title);
+            }
+        }));
+
         self.connect_local(
             "key-press-event",
             false,
@@ -232,7 +240,7 @@ impl Term {
             }
         }
         notebook.set_show_tabs(notebook.n_pages() > 1);
-        if notebook.children().is_empty() {
+        if notebook.n_pages() == 0 {
             self.close();
         }
     }
@@ -269,16 +277,19 @@ impl Term {
         terminal.connect_child_exited(glib::clone!(@weak this => move |term, _exit_code| {
             this.remove_tab(term);
         }));
-        terminal.connect_window_title_notify(glib::clone!(@weak notebook => move |term| {
+        terminal.connect_window_title_notify(glib::clone!(@weak this => move |term| {
+            let notebook = this.notebook();
             if let Some(new_title) = term.window_title() {
                 if let Some(num) = notebook.page_num(term) {
                     let label = this.page_label(num + 1, Some(&new_title));
                     notebook.set_tab_label(term, Some(&label));
+                    this.set_title(&new_title);
                 }
             }
         }));
 
-        notebook.set_show_tabs(children.len() > 1);
+        notebook.set_show_tabs(notebook.n_pages() > 1);
+
         for child in &children {
             hacks::set_child_property(notebook.clone(), child.clone(), "tab-fill", true);
             hacks::set_child_property(notebook.clone(), child.clone(), "tab-expand", true);
