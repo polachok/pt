@@ -52,3 +52,8 @@ A: Probably as fast as your next vte-based terminal (roxterm, gnome-terminal, sa
 *Q: Is it memory safe?*
 
 A: Probably as safe or safer as your next vte-based terminal (roxterm, gnome-terminal, sakura,...)
+
+
+Screenshot
+----------
+![screenshot](pt2.png)
