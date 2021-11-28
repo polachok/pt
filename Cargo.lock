@@ -533,7 +533,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "pterm"
+name = "pt"
 version = "0.1.0"
 dependencies = [
  "anyhow",
