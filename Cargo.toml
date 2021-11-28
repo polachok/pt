@@ -1,0 +1,21 @@
+[package]
+name = "pterm"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+gtk = "0.14"
+gtk-sys = "0.14"
+gdk = "0.14"
+gdk-sys = "0.14"
+glib = "0.14"
+gio = "0.14"
+pango = "0.14"
+anyhow = "1.0"
+serde = { version = "1.0", features = ["derive"] }
+toml = "0.5"
+log = "0.4"
+xdg = "2.4"
+vte = { git = "https://github.com/polachok/vte", rev = "94e0a21e6b9fc4f5041dfc787ad9c5224555f7d8" }
