@@ -37,3 +37,18 @@ Default configuration is as follows:
 	"#5656b6b6c2c2",
 	"#ffffffffffff",
     ]
+
+
+FAQ
+---
+*Q: Is it written in rust?*
+
+A: Yes!
+
+*Q: Is is blazing fast?*
+
+A: Probably as fast as your next vte-based terminal (roxterm, gnome-terminal, sakura,...)
+
+*Q: Is it memory safe?*
+
+A: Probably as safe or safer as your next vte-based terminal (roxterm, gnome-terminal, sakura,...)
