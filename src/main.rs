@@ -1,5 +1,6 @@
 use std::cell::RefCell;
-use std::path::Path;
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
 
 use anyhow::Error;
 use gio::SimpleAction;
@@ -80,36 +81,6 @@ impl Default for Env {
     }
 }
 
-fn new_terminal(config: &TerminalConfig) -> vte::Terminal {
-    let terminal = vte::Terminal::builder()
-        .font_desc(&config.font)
-        .has_focus(true)
-        .is_focus(true)
-        .build();
-
-    terminal.set_colors(
-        Some(&config.foreground),
-        Some(&config.background),
-        &config.palette,
-    );
-    let shell = glib::getenv("SHELL").expect("SHELL must be set");
-
-    terminal.spawn_async(
-        vte::PtyFlags::DEFAULT,
-        None,
-        &[Path::new(&shell)],
-        &[],
-        glib::SpawnFlags::DEFAULT,
-        Some(Box::new(|| /* println!("child setup") */ {})),
-        -1,
-        None::<&gio::Cancellable>,
-        Some(Box::new(|terminal, pid, error| {
-            debug!("{:?} {:?} {:?}", terminal, pid, error);
-        })),
-    );
-    terminal
-}
-
 glib::wrapper! {
     pub struct Term(ObjectSubclass<TermImpl>)
         @extends gtk::ApplicationWindow, gtk::Window, gtk::Container, gtk::Widget, gtk::Buildable,
@@ -117,10 +88,16 @@ glib::wrapper! {
 }
 
 #[derive(Default)]
+struct Meta {
+    pid: Option<u32>,
+}
+
+#[derive(Default)]
 pub struct TermImpl {
     notebook: RefCell<gtk::Notebook>,
     env: RefCell<Env>,
     config: RefCell<TerminalConfig>,
+    page_meta: RefCell<HashMap<vte::Terminal, Meta>>,
 }
 
 #[glib::object_subclass]
@@ -225,12 +202,30 @@ impl Term {
         self.add_action(&new_tab);
     }
 
-    fn remove_tab(&self, term: &vte::Terminal) {
+    fn active_terminal(&self) -> Option<vte::Terminal> {
+        let notebook = self.notebook();
+        let active_page = notebook.page();
+
+        if active_page < 0 {
+            return None;
+        }
+
+        for (page, child) in notebook.children().into_iter().enumerate() {
+            if page == active_page as usize {
+                return child.downcast::<vte::Terminal>().ok();
+            }
+        }
+        None
+    }
+
+    fn remove_tab(&self, terminal: &vte::Terminal) {
+        let term = TermImpl::from_instance(self);
         let notebook = self.notebook();
         let mut removed = false;
 
         for (page, child) in notebook.children().iter().enumerate() {
-            if child == term {
+            if child == terminal {
+                term.page_meta.borrow_mut().remove(terminal);
                 notebook.remove_page(Some(page as u32));
                 removed = true;
                 continue;
@@ -260,12 +255,86 @@ impl Term {
             .build()
     }
 
+    fn new_terminal(&self, config: &TerminalConfig, curdir: Option<PathBuf>) -> vte::Terminal {
+        let terminal = vte::Terminal::builder()
+            .font_desc(&config.font)
+            .has_focus(true)
+            .is_focus(true)
+            .build();
+
+        terminal.set_colors(
+            Some(&config.foreground),
+            Some(&config.background),
+            &config.palette,
+        );
+        let shell = glib::getenv("SHELL").expect("SHELL must be set");
+        let this = self.clone();
+        let working_dir = curdir.as_ref().map(|path| path.to_str()).flatten();
+
+        terminal.spawn_async(
+            vte::PtyFlags::DEFAULT,
+            working_dir,
+            &[Path::new(&shell)],
+            &[],
+            glib::SpawnFlags::DEFAULT,
+            Some(Box::new(|| /* println!("child setup") */ {})),
+            -1,
+            None::<&gio::Cancellable>,
+            Some(Box::new(
+                glib::clone!(@weak this => move |terminal, pid, error| {
+                    debug!("{:?} {:?} {:?}", terminal, pid, error);
+                    if let Some(err) = error {
+                        log::error!("failed to spawn process: {}", err);
+                        this.remove_tab(terminal);
+                        return;
+                    }
+                    if pid.0 < 0 {
+                        log::error!("failed to spawn process");
+                        this.remove_tab(terminal);
+                        return;
+                    }
+                    let term = TermImpl::from_instance(&this);
+                    let mut page_meta = term.page_meta.borrow_mut();
+                    if let Some(meta) = page_meta.get_mut(&terminal) {
+                        meta.pid = Some(pid.0 as u32);
+                    }
+                }),
+            )),
+        );
+        terminal
+    }
+
+    // only works on linux
+    fn get_terminal_cwd(&self, terminal: &vte::Terminal) -> Option<PathBuf> {
+        let term = TermImpl::from_instance(self);
+
+        if let Some(pid) = term
+            .page_meta
+            .borrow()
+            .get(terminal)
+            .and_then(|meta| meta.pid)
+        {
+            let path = format!("/proc/{}/cwd", pid);
+            let path = Path::new(&path);
+            return std::fs::read_link(&path).ok();
+        }
+        None
+    }
+
     fn add_new_tab(&self) {
         let term = TermImpl::from_instance(self);
         let notebook = &*term.notebook.borrow();
 
-        let terminal = new_terminal(&term.config.borrow());
+        let override_curdir = self
+            .active_terminal()
+            .and_then(|term| self.get_terminal_cwd(&term));
+
+        let terminal = self.new_terminal(&term.config.borrow(), override_curdir);
         let page_number = notebook.n_pages() + 1;
+
+        term.page_meta
+            .borrow_mut()
+            .insert(terminal.clone(), Meta::default());
 
         let label = self.page_label(page_number, None);
 
@@ -301,6 +370,8 @@ impl Term {
 }
 
 fn main() -> Result<(), Error> {
+    env_logger::init();
+
     let xdg_dirs = xdg::BaseDirectories::with_prefix("pterm")?;
     let config_path = xdg_dirs.place_config_file("config.toml")?;
     let config = match Config::from_file(&config_path) {

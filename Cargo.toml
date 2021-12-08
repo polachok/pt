@@ -19,3 +19,4 @@ toml = "0.5"
 log = "0.4"
 xdg = "2.4"
 vte = { git = "https://github.com/polachok/vte", rev = "94e0a21e6b9fc4f5041dfc787ad9c5224555f7d8" }
+env_logger = "0.9"
