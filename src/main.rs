@@ -399,6 +399,7 @@ fn main() -> Result<(), Error> {
             font: {
                 let mut font = FontDescription::new();
                 font.set_family(&config.font_family);
+                font.set_size(pango::SCALE * config.font_size as i32);
                 font
             },
             palette: config
